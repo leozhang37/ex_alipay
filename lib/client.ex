@@ -1,5 +1,6 @@
 defmodule ExAlipay.Client do
-	require Logger
+  require Logger
+
   @moduledoc """
   ExAlipay Client that export API and perform request to alipay backend.
 
@@ -94,8 +95,7 @@ defmodule ExAlipay.Client do
             charset: "utf-8",
             sign_type: "RSA2",
             version: "1.0",
-            sandbox?: false,
-			alipay_public_key: nil
+            sandbox?: false
 
   @type t :: %__MODULE__{
           appid: binary,
@@ -106,8 +106,7 @@ defmodule ExAlipay.Client do
           charset: binary,
           sign_type: binary,
           version: binary,
-          sandbox?: boolean,
-		  alipay_public_key: binary
+          sandbox?: boolean
         }
 
   @supported_api %{
@@ -122,7 +121,7 @@ defmodule ExAlipay.Client do
     auth_token: "alipay.system.oauth.token",
     user_info: "alipay.user.info.share",
     transfer: "alipay.fund.trans.toaccount.transfer",
-    transfer_query: "alipay.fund.trans.order.query",
+    transfer_query: "alipay.fund.trans.order.query"
   }
 
   defmacro __using__(opts) do
@@ -135,8 +134,9 @@ defmodule ExAlipay.Client do
 
   defmacro __before_compile__(_) do
     exist_functions = Client.__info__(:functions)
+
     supported_api()
-    |> Map.keys
+    |> Map.keys()
     |> Enum.filter(fn key -> Keyword.has_key?(exist_functions, key) end)
     |> Enum.concat([:auth_url, :app_auth_str, :verify_notify_sign?])
     |> Enum.map(fn key ->
@@ -369,6 +369,7 @@ defmodule ExAlipay.Client do
     state = Map.get(params, :state)
     scope = Map.get(params, :scope, "auth_user")
     url = "#{base_url}?app_id=#{client.appid}&scope=#{scope}&redirect_uri=#{redirect_uri}"
+
     case state do
       nil -> url
       _ -> "#{url}&state=#{state}"
@@ -398,8 +399,9 @@ defmodule ExAlipay.Client do
       scope: "kuaijie",
       target_id: target_id,
       auth_type: "AUTHACCOUNT",
-      sign_type: "RSA2",
+      sign_type: "RSA2"
     }
+
     data = Utils.create_sign_str(params)
     sign = Utils.create_sign(client, data)
     "#{data}&sign=#{sign}"
@@ -411,6 +413,8 @@ defmodule ExAlipay.Client do
   @spec request(%Client{}, binary, map, map) :: map
   def request(client, method, content, ext_params \\ %{}) do
     url = Utils.build_request_url(client, method, content, ext_params)
+    Logger.info("[ex_alipay] url: #{inspect(url)}")
+
     with {:ok, resp} <- @http_adapter.get(url),
          {:ok, body} <- verify_status(resp),
          {:ok, key} <- verify_request_sign(client, body),
@@ -423,33 +427,39 @@ defmodule ExAlipay.Client do
   end
 
   defp verify_status(%{status_code: 200, body: body}) do
-	 Logger.info("[支付宝]返回: #{inspect(body)}")
+    Logger.info("[ex_alipay]返回: #{inspect(body)}")
     {:ok, body}
   end
+
   defp verify_status(%{status_code: status_code}) do
     {:error, %RequestError{status_code: status_code}}
   end
 
   defp check_response_data(resp_data) do
     case resp_data["code"] do
-      nil -> {:ok, resp_data} # api response like auth_token without code
-      "10000" -> {:ok, resp_data} # 10000 is the success code of alipay
+      # api response like auth_token without code
+      nil -> {:ok, resp_data}
+      # 10000 is the success code of alipay
+      "10000" -> {:ok, resp_data}
       _ -> {:error, ResponseError.from_map(resp_data)}
     end
   end
 
   defp verify_request_sign(client, body) do
     regex = ~r/"(?<key>\w+_response)":(?<response>{[^}]+})/
+
     case Regex.named_captures(regex, body) do
       %{"response" => response, "key" => key} ->
         resp_json = Jason.decode!(body)
-        ok? = RSA.verify(
-          response, client.sign_type, client.alipay_public_key, resp_json["sign"])
+        ok? = RSA.verify(response, client.sign_type, client.public_key, resp_json["sign"])
+
         cond do
           ok? -> {:ok, key}
           not ok? -> {:error, %RequestError{reason: "verify sign failed"}}
         end
-      nil -> {:error, %RequestError{reason: "unexpected response data"}}
+
+      nil ->
+        {:error, %RequestError{reason: "unexpected response data"}}
     end
   end
 
@@ -462,13 +472,14 @@ defmodule ExAlipay.Client do
     {sign_type, body} = Map.pop(body, :sign_type)
 
     body
-    |> Utils.create_sign_str
-    |> RSA.verify(sign_type, client.alipay_public_key, sign)
+    |> Utils.create_sign_str()
+    |> RSA.verify(sign_type, client.public_key, sign)
   end
 
   defp get_base_auth_url(%Client{sandbox?: false}) do
     "https://openauth.alipay.com/oauth2/publicAppAuthorize.htm"
   end
+
   defp get_base_auth_url(%Client{sandbox?: true}) do
     "https://openauth.alipaydev.com/oauth2/publicAppAuthorize.htm"
   end
