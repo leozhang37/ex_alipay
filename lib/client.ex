@@ -1,4 +1,5 @@
 defmodule ExAlipay.Client do
+	require Logger
   @moduledoc """
   ExAlipay Client that export API and perform request to alipay backend.
 
@@ -93,7 +94,8 @@ defmodule ExAlipay.Client do
             charset: "utf-8",
             sign_type: "RSA2",
             version: "1.0",
-            sandbox?: false
+            sandbox?: false,
+			alipay_public_key: nil
 
   @type t :: %__MODULE__{
           appid: binary,
@@ -105,6 +107,7 @@ defmodule ExAlipay.Client do
           sign_type: binary,
           version: binary,
           sandbox?: boolean,
+		  alipay_public_key: binary
         }
 
   @supported_api %{
@@ -420,6 +423,7 @@ defmodule ExAlipay.Client do
   end
 
   defp verify_status(%{status_code: 200, body: body}) do
+	 Logger.info("[支付宝]返回: #{inspect(body)}")
     {:ok, body}
   end
   defp verify_status(%{status_code: status_code}) do
@@ -440,7 +444,7 @@ defmodule ExAlipay.Client do
       %{"response" => response, "key" => key} ->
         resp_json = Jason.decode!(body)
         ok? = RSA.verify(
-          response, client.sign_type, client.public_key, resp_json["sign"])
+          response, client.sign_type, client.alipay_public_key, resp_json["sign"])
         cond do
           ok? -> {:ok, key}
           not ok? -> {:error, %RequestError{reason: "verify sign failed"}}
@@ -459,7 +463,7 @@ defmodule ExAlipay.Client do
 
     body
     |> Utils.create_sign_str
-    |> RSA.verify(sign_type, client.public_key, sign)
+    |> RSA.verify(sign_type, client.alipay_public_key, sign)
   end
 
   defp get_base_auth_url(%Client{sandbox?: false}) do
